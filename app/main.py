@@ -1,3 +1,5 @@
+import asyncio
+from arq.worker import Worker
 from fastapi import FastAPI
 from arq import create_pool
 from app.api.routes import source, chat
@@ -8,6 +10,13 @@ from app.core.qdrant import delete_all_collections, client
 from fastapi.middleware.cors import CORSMiddleware
 
 
+async def start_worker():
+    worker = Worker(
+        functions=WorkerSettings.functions,
+        redis_settings=WorkerSettings.redis_settings
+    )
+    await worker.async_run()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -15,7 +24,10 @@ async def lifespan(app: FastAPI):
     app.state.arq_pool = await create_pool(
         WorkerSettings.redis_settings
     )
+    # start worker in background
+    worker_task = asyncio.create_task(start_worker())
 
+    
     # Scheduler
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
@@ -30,6 +42,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cleanup
+    worker_task.cancel()
     scheduler.shutdown()
 
 

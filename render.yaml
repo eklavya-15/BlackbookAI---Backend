@@ -1,0 +1,44 @@
+services:
+  # ── FastAPI Web Service ──────────────────────────────
+  - type: web
+    name: blackbook-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: REDIS_URL
+        sync: false          
+      - key: REDIS_USERNAME
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # ── ARQ Background Worker ────────────────────────────
+  - type: worker
+    name: blackbook-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: arq app.workers.ingestion_worker.WorkerSettings
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: REDIS_URL
+        sync: false
+      - key: REDIS_USERNAME
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

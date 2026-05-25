@@ -7,8 +7,14 @@ def extract_chunks_from_pdf(user_id, source_id, source_name, source_path):
     """Extract text + tables per page, merge in order."""
     
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512, 
-        chunk_overlap=64
+        chunk_size=768,       
+        chunk_overlap=150,    
+        separators=[
+            "\n\n",   
+            "\n",
+            ". ",     
+            ""
+        ]
     )
     all_chunks = []
 
@@ -82,10 +88,10 @@ def extract_chunks_from_pdf(user_id, source_id, source_name, source_path):
 def extract_chunks_from_text_content(user_id, source_id, source_title, text_content):
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512, 
-        chunk_overlap=64,
+        chunk_size=768,       
+        chunk_overlap=150,    
         separators=[
-            "\n\n",
+            "\n\n",   
             "\n",
             ". ",
             " ",
@@ -105,8 +111,8 @@ def extract_chunks_from_text_content(user_id, source_id, source_title, text_cont
 
 def extract_chunks_from_url_content(user_id, source_id, url, text_content):
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=512, 
-        chunk_overlap=64,
+        chunk_size=768,
+        chunk_overlap=150,
         separators=[
             "\n\n",
             "\n",

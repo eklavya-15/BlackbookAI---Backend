@@ -14,7 +14,7 @@ async def retrieve_answer(query: str, user_id: str, active_source_ids: list[str]
 
 
 
-async def search_relevant_context( query_embedding: list, user_id: str, active_source_ids: list[str] | None, top_k: int = 3) -> list:
+async def search_relevant_context( query_embedding: list, user_id: str, active_source_ids: list[str] | None, top_k: int = 5) -> list:
 
     COLLECTION_NAME = f"blackbook_{user_id}"
 

@@ -1,7 +1,9 @@
+import io
 import os, uuid
 from fastapi import APIRouter, UploadFile, File, Header, Request, HTTPException
 from app.schemas.source import TextSourceRequest, URLSourceRequest
 from app.core.redis import get_source_status
+from app.core.r2 import s3
 
 router = APIRouter()
 
@@ -17,20 +19,20 @@ async def upload_pdf(request:Request, file: UploadFile = File(...), x_user_id: s
     
     source_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, file.filename))
     
-    # Save the file to the uploads directory
-    os.makedirs("uploads", exist_ok=True)
-    file_path = f"uploads/{source_id}.pdf"
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
+    # Upload to R2
+    r2_key = f"uploads/{source_id}.pdf"
+    file_bytes = await file.read()
+    s3.upload_fileobj(io.BytesIO(file_bytes), os.getenv("R2_BUCKET_NAME"), r2_key)
 
     pool = request.app.state.arq_pool
     await pool.enqueue_job(
         "ingest_source_pdf",
-        source_path=file_path,
+        r2_key=r2_key,
         source_name=file.filename,
         user_id=x_user_id,
         source_id=source_id
     )
+
     return {"fileName": file.filename,"userId": x_user_id, "sourceId": source_id}
 
 @router.post("/url")
@@ -59,7 +61,6 @@ async def upload_text(request: Request, payload: TextSourceRequest, x_user_id: s
     source_title = payload.sourceTitle
     source_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, text[:100]))
 
-    # enqueue_ingestion(source_id, text, x_user_id)
     pool = request.app.state.arq_pool
     await pool.enqueue_job(
         "ingest_source_text",
@@ -69,7 +70,7 @@ async def upload_text(request: Request, payload: TextSourceRequest, x_user_id: s
         source_title=source_title
     )
 
-    return {"text": text[:100], "userId": x_user_id, "sourceId": source_id}
+    return {"text": text[:50], "userId": x_user_id, "sourceId": source_id}
 
 @router.get("/{source_id}/status")
 async def source_status(request: Request, source_id: str):

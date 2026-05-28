@@ -13,7 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 async def start_worker():
     worker = Worker(
         functions=WorkerSettings.functions,
-        redis_settings=WorkerSettings.redis_settings
+        redis_settings=WorkerSettings.redis_settings,
+        max_jobs=1,
+        job_timeout=300
     )
     await worker.async_run()
 

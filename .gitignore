@@ -14,4 +14,4 @@ test*.py
 .env
 evaluation
 poll*.py
-
+.dockerignore

@@ -1,56 +1,95 @@
-import traceback
+import traceback, os, tempfile
+from app.core.r2 import s3
+from dotenv import load_dotenv
+from app.core.redis import set_source_status
 from app.core.qdrant import init_user_collection
 from app.services.crawler_service import crawl_website
 from app.services.embedding_service import embedding_chunks
 from app.services.chunking_service import extract_chunks_from_pdf, extract_chunks_from_text_content, extract_chunks_from_url_content
+load_dotenv()
 
-
-async def process_source_text(user_id, source_id, text, source_title):
+async def process_source_pdf(ctx, user_id, source_id, source_name, r2_key):  
+    tmp_path = None
+    success = False
     try:
-        # Init collection (recreates fresh if exists)
-        collection_name = await init_user_collection(user_id)
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "downloading", "progress": 0})
 
-        # this creates chunks from text content and attach metadata
-        chunks = extract_chunks_from_text_content(user_id, source_id, source_title or "source_text", text)
-
-        await embedding_chunks(chunks, collection_name)
-
-    except Exception as e:
-        print(f"ERROR: {type(e).__name__}: {e}")
-        traceback.print_exc()
-
-async def process_source_url(user_id, source_id, url):
-    try:
-        # Init collection (recreates fresh if exists)
-        collection_name = await init_user_collection(user_id)
-
-        # Extract text content from the URL (with crawler) - this is where you can add retries, error handling, etc.
-        text_content = await crawl_website(url)
-
-        # this creates chunks from text content and attach metadata
-        chunks = extract_chunks_from_url_content(user_id, source_id, url, text_content)
-
-        await embedding_chunks(chunks, collection_name)
-
-    except Exception as e:
-        print(f"ERROR: {type(e).__name__}: {e}")
-        traceback.print_exc()
-
-async def process_source_pdf(user_id, source_id, source_name, source_path):
-    try:
-        # set_status(sourceId, "processing")
+        # download pdf to temp file
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            s3.download_fileobj(os.getenv("R2_BUCKET_NAME"), r2_key, tmp)
+            tmp_path = tmp.name
 
         # Init collection (recreates fresh if exists)
         collection_name = await init_user_collection(user_id)
         
         # Extract per page content + metadata and create chunks from it
-        chunks = extract_chunks_from_pdf(user_id, source_id, source_name, source_path)
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "chunking", "progress": 50})
+        chunks = extract_chunks_from_pdf(user_id, source_id, source_name, tmp_path)
 
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "embedding", "progress": 75})
         await embedding_chunks(chunks, collection_name)
 
-        # set_status(sourceId, "completed")
-
     except Exception as e:
+        await set_source_status(ctx["redis"], source_id, {"status": "failed", "error": str(e)})
         print(f"ERROR: {type(e).__name__}: {e}")
         traceback.print_exc()
+    
+    finally:
+        # cleanup temp file and R2 object
+        if tmp_path:
+            os.remove(tmp_path)
+        s3.delete_object(Bucket=os.getenv("R2_BUCKET_NAME"), Key=r2_key)
+    
+    if success:
+        await set_source_status(ctx["redis"], source_id, {"status": "completed", "progress": 100})
+
+
+async def process_source_text(ctx, user_id, source_id, text, source_title):
+    try:
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "initializing", "progress": 50})
+
+        # Init collection (recreates fresh if exists)
+        collection_name = await init_user_collection(user_id)
+
+        # this creates chunks from text content and attach metadata
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "chunking", "progress": 75})
+        chunks = extract_chunks_from_text_content(user_id, source_id, source_title or "source_text", text)
+        
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "embedding", "progress": 90})
+        await embedding_chunks(chunks, collection_name)
+
+    except Exception as e:
+        await set_source_status(ctx["redis"], source_id, {"status": "failed", "error": str(e)})
+        print(f"ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+
+    finally:
+        await set_source_status(ctx["redis"], source_id, {"status": "completed", "progress": 100})
+
+async def process_source_url(ctx, user_id, source_id, url):
+    try:
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "initializing", "progress": 50})
+
+        # Init collection (recreates fresh if exists)
+        collection_name = await init_user_collection(user_id)
+
+        # Extract text content from the URL (with crawler) - this is where you can add retries, error handling, etc.
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "crawling", "progress": 25})
+        text_content = await crawl_website(url)
+
+        # this creates chunks from text content and attach metadata
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "chunking", "progress": 50})
+        chunks = extract_chunks_from_url_content(user_id, source_id, url, text_content)
+        
+        await set_source_status(ctx["redis"], source_id, {"status": "processing", "stage": "embedding", "progress": 75})
+        await embedding_chunks(chunks, collection_name)
+
+    except Exception as e:
+        await set_source_status(ctx["redis"], source_id, {"status": "failed", "error": str(e)})
+        print(f"ERROR: {type(e).__name__}: {e}")
+        traceback.print_exc()
+
+    finally:
+        await set_source_status(ctx["redis"], source_id, {"status": "completed", "progress": 100})
+
    

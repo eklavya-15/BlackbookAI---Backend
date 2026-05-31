@@ -1,12 +1,12 @@
-from litellm import acompletion, aembedding, APIError, AuthenticationError, RateLimitError
+from openai import OpenAI, APIError, AuthenticationError, RateLimitError
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.schemas.chat import ChatMessage
 load_dotenv()
 
-client = OpenAI()
+client = AsyncOpenAI()
 
 SYSTEM_PROMPT = """
 You are a helpful AI assistant answering questions based on retrieved document context.
@@ -18,8 +18,8 @@ Guidelines:
 - If the context partially answers the question, provide the best possible answer using the available information.
 - Only say "I don't know" if the context contains absolutely no relevant information.
 - Keep answers concise but informative.
-- When possible, cite the source and page number in this format:
-  (Source: <source>, Page: <page>)
+- When possible, cite the source and page number/section whichever is available in this format:
+  (Source: <source>, Page: <page>, Section: <section>)
 
 Retrieved Context:
 {context}
@@ -27,12 +27,11 @@ Retrieved Context:
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Embed a list of texts, returns list of vectors."""
-    response = await aembedding(
+    response = await client.embeddings.create(
         model=os.getenv("EMBEDDING_MODEL"),
-        input=texts,
-        api_key=os.getenv("OPENAI_API_KEY")
+        input=texts
     )
-    return [item["embedding"] for item in response.data]
+    return [item.embedding for item in response.data]
 
 
 async def embed_user_query(query: str) -> list[float]:
@@ -60,8 +59,8 @@ async def get_llm_response( query: str, relevant_context: list | None, conversat
             )
             for c in (relevant_context or [])
         ])
-    print("CONTEXT FOR LLM:")
-    print(context[:1000])  # print first 1000 chars of context for debugging
+    # print("CONTEXT FOR LLM:")
+    # print(context[:1000])  # print first 1000 chars of context for debugging
     messages = [
         {
             "role": "system",
@@ -77,11 +76,11 @@ async def get_llm_response( query: str, relevant_context: list | None, conversat
     ]
 
     try:
-        response = await acompletion(
+        response = await client.chat.completions.create(
             model=os.getenv("LLM_MODEL"),
             messages=messages,
             temperature=0.2,
-            max_tokens=1000
+            max_tokens=1500
         )
     except AuthenticationError as e:
         print(f"Bad API key: {e}")

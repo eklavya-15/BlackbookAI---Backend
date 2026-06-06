@@ -1,7 +1,8 @@
-from openai import OpenAI, APIError, AuthenticationError, RateLimitError
-import os
+from openai import OpenAI, APIError, AuthenticationError, RateLimitError, AsyncOpenAI
+from fastapi import HTTPException
+import os, json
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
+from typing import AsyncIterator
 
 from app.schemas.chat import ChatMessage
 load_dotenv()
@@ -101,3 +102,67 @@ async def get_llm_response( query: str, relevant_context: list | None, conversat
             for c in relevant_context
         ]
     }
+
+async def get_llm_response_stream(
+        query: str,
+        relevant_context: list | None,
+        conversation_history: list[ChatMessage],
+    ) -> AsyncIterator[str]:
+
+        if not relevant_context:
+            context = ""
+        else:
+            context = "\n\n".join([
+                (
+                    f"[Source: {c['source_name']} ({c['source_type']})]"
+                    + (f", Page: {c['page']}" if c.get("page") else "")
+                    + (f", URL: {c['url']}" if c.get("url") else "")
+                    + (f", Section: {c['section']}" if c.get("section") else "")
+                    + f"\n{c['text']}"
+                )
+                for c in relevant_context
+            ])
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT.format(context=context)},
+            *[{"role": msg.role, "content": msg.content} for msg in conversation_history],
+        ]
+
+        try:
+            stream = await client.chat.completions.create(
+                model=os.getenv("LLM_MODEL"),
+                messages=messages,
+                temperature=0.2,
+                max_tokens=1500,
+                stream=True,          # <-- key change
+            )
+
+            async for chunk in stream:
+                token = chunk.choices[0].delta.content
+
+                if token:
+                    yield f"data: {json.dumps({'content': token})}\n\n"
+
+            yield "data: [DONE]\n\n"
+
+            # After all tokens, send sources as a final SSE event
+            sources = [
+                {
+                    "title"  : c["source_name"],
+                    "page"   : c.get("page"),
+                    "url"    : c.get("url"),
+                    "section": c.get("section"),
+                }
+                for c in (relevant_context or [])
+            ]
+            yield "data: [DONE]\n\n"
+
+        except AuthenticationError as e:
+            print(f"Bad API key: {e}")
+            raise HTTPException(status_code=500, detail="LLM authentication failed")
+        except RateLimitError as e:
+            print(f"Rate limited: {e}")
+            raise HTTPException(status_code=429, detail="LLM rate limit hit")
+        except APIError as e:
+            print(f"API error: {e}")
+            raise HTTPException(status_code=502, detail="LLM upstream error")

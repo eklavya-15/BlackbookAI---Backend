@@ -9,8 +9,9 @@ REDIS_URL = os.getenv("REDIS_URL")
 redis_settings = RedisSettings(
     host=os.getenv("REDIS_HOST", "3.110.55.133"),   
     port=int(os.getenv("REDIS_PORT", "16012")),
-    username=os.getenv("REDIS_USERNAME"),
     password=os.getenv("REDIS_PASSWORD"),
+    ssl=False,
+    conn_timeout=30
 )
 async def set_source_status(redis: ArqRedis, source_id: str, status: dict):
     key = f"source:status:{source_id}"

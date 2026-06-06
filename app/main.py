@@ -8,48 +8,79 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.qdrant import delete_all_collections, client
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.ram import ram
 
 
 async def start_worker():
+    print("worker starting")
     worker = Worker(
         functions=WorkerSettings.functions,
         redis_settings=WorkerSettings.redis_settings,
         max_jobs=1,
         job_timeout=300
     )
-    await worker.async_run()
+    try:
+        await worker.async_run()
+    except asyncio.CancelledError:
+        print("worker cancelled cleanly")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Create pool first, confirm Redis is up
 
-    # Create ARQ pool
-    app.state.arq_pool = await create_pool(
-        WorkerSettings.redis_settings
-    )
-    # start worker in background
-    worker_task = asyncio.create_task(start_worker())
+    s = WorkerSettings.redis_settings
+    print(f"Connecting to Redis: {s.host}:{s.port} | user={s.username} | pass={'set' if s.password else 'NOT SET'}")
+    app.state.arq_pool = await create_pool(WorkerSettings.redis_settings)
+    print("Redis pool ready")
 
-    
-    # Scheduler
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        delete_all_collections,
-        trigger="cron",
-        hour=0,
-        minute=0,
-        args=[client]
-    )
-    scheduler.start()
+    # Small delay before starting worker so the event loop is settled
+    async def start_worker_delayed():
+        await asyncio.sleep(1)  # let startup finish first
+        await start_worker()
+
+    worker_task = asyncio.create_task(start_worker_delayed())
 
     yield
 
-    # Cleanup
     worker_task.cancel()
-    scheduler.shutdown()
+    try:
+        await worker_task
+    except asyncio.CancelledError:
+        pass  # expected on shutdown
 
-
-    # Close ARQ pool
     await app.state.arq_pool.close()
+
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     print("app starting", ram())
+#     # Create ARQ pool
+#     app.state.arq_pool = await create_pool(
+#         WorkerSettings.redis_settings
+#     )
+#     # start worker in background
+#     worker_task = asyncio.create_task(start_worker())
+
+    
+#     # Scheduler
+#     # scheduler = AsyncIOScheduler()
+#     # scheduler.add_job(
+#     #     delete_all_collections,
+#     #     trigger="cron",
+#     #     hour=0,
+#     #     minute=0,
+#     #     args=[client]
+#     # )
+#     # scheduler.start()
+
+#     yield
+
+#     # Cleanup
+#     worker_task.cancel()
+#     # scheduler.shutdown()
+
+
+#     # Close ARQ pool
+#     await app.state.arq_pool.close()
 
 app = FastAPI(lifespan=lifespan)
 

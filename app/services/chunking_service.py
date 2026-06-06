@@ -3,9 +3,10 @@ import pdfplumber
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
-def extract_chunks_from_pdf(user_id, source_id, source_name, source_path):
+def extract_chunks_from_pdf(source_id, source_name, temp_path):
     """Extract text + tables per page, merge in order."""
-    
+    batch = []
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=768,       
         chunk_overlap=150,    
@@ -16,12 +17,11 @@ def extract_chunks_from_pdf(user_id, source_id, source_name, source_path):
             ""
         ]
     )
-    all_chunks = []
 
     # Open both readers on the same file
-    fitz_doc = fitz.open(source_path)
+    fitz_doc = fitz.open(temp_path)
     
-    with pdfplumber.open(source_path) as plumber_doc:
+    with pdfplumber.open(temp_path) as plumber_doc:
         for page_num in range(len(fitz_doc)):
             fitz_page    = fitz_doc[page_num]
             plumber_page = plumber_doc.pages[page_num]
@@ -71,18 +71,22 @@ def extract_chunks_from_pdf(user_id, source_id, source_name, source_path):
             chunks = splitter.create_documents(
                 [full_page_text],
                 metadatas=[{                    
-                    "user_id"     : user_id,          
                     "source_id"   : source_id,        
-                    "source_path"   : source_path,           
                     "source_name" :   source_name,                   
                     "source_type"   : "pdf",               
                     "page"        : page_num + 1,          
                     "section"     : current_section,
                 }]
             )
-            all_chunks.extend(chunks)
-    # print(all_chunks[:1])
-    return all_chunks
+            batch.extend(chunks)
+
+            if len(batch) >= 100:
+                yield batch[:100]
+                batch = batch[100:]
+
+    if batch:
+        yield batch
+
 
 
 def extract_chunks_from_text_content(user_id, source_id, source_title, text_content):

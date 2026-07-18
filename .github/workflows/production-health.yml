@@ -1,11 +1,65 @@
-name: Test
+name: NotebookLLM Production Health
 
 on:
+  schedule:
+    # 8:00 AM IST every day (02:30 UTC)
+    - cron: "30 2 * * *"
+
   workflow_dispatch:
 
 jobs:
-  hello:
+  production-health:
     runs-on: ubuntu-latest
 
+    env:
+      API_URL: ${{ secrets.API_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+      PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+
     steps:
-      - run: echo "Hello NotebookLLM!"
+      - name: Call Production Health Endpoint
+        id: healthcheck
+        run: |
+          PAYLOAD='{"userId":"c4096a30-1bf7-4929-8018-b413cd1f12b8","sourceIds":[{"sourceId":"a8df84f9-3336-5a12-8e27-a8d58ad55e6c","type":"pdf","title":"make_in_India.pdf","createdAt":"2026-06-04T00:42:35.319Z"},{"sourceId":"b5284fef-239d-5ec6-837a-b8b490cedf2a","type":"pdf","title":"Operation-SIndoor-15-January-2026.pdf","createdAt":"2026-06-04T00:50:36.475Z","status":"processing"},{"sourceId":"a9740dcb-9362-58c5-a8f6-7954cf04530f","type":"text","title":"Untitled Text","createdAt":"2026-06-22T15:37:29.165Z","status":"completed"}],"query":"ping","conversationHistory":[]}'
+
+          HTTP_CODE=$(curl \
+            --silent \
+            --show-error \
+            --max-time 60 \
+            --write-out "%{http_code}" \
+            --output response.json \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$API_URL")
+
+          echo "HTTP_CODE=$HTTP_CODE" >> $GITHUB_ENV
+
+          echo "Response:"
+          cat response.json
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            exit 1
+          fi
+
+      - name: Notify Success
+        if: success()
+        run: |
+          curl -s \
+            -F "token=$PUSHOVER_TOKEN" \
+            -F "user=$PUSHOVER_USER" \
+            -F "title=✅ NotebookLLM Production" \
+            -F "message=Health check passed successfully." \
+            https://api.pushover.net/1/messages.json
+
+      - name: Notify Failure
+        if: failure()
+        run: |
+          curl -s \
+            -F "token=$PUSHOVER_TOKEN" \
+            -F "user=$PUSHOVER_USER" \
+            -F "priority=1" \
+            -F "title=❌ NotebookLLM Production" \
+            -F "message=Health check FAILED. Check GitHub Actions logs." \
+            https://api.pushover.net/1/messages.json

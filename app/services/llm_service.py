@@ -80,8 +80,6 @@ async def get_llm_response( query: str, relevant_context: list | None, conversat
         response = await client.chat.completions.create(
             model=os.getenv("LLM_MODEL"),
             messages=messages,
-            temperature=0.2,
-            max_tokens=1500
         )
     except AuthenticationError as e:
         print(f"Bad API key: {e}")
@@ -132,8 +130,6 @@ async def get_llm_response_stream(
             stream = await client.chat.completions.create(
                 model=os.getenv("LLM_MODEL"),
                 messages=messages,
-                temperature=0.2,
-                max_tokens=1500,
                 stream=True,          # <-- key change
             )
 
@@ -157,12 +153,26 @@ async def get_llm_response_stream(
             ]
             yield "data: [DONE]\n\n"
 
+        # Do NOT raise HTTPException here because StreamingResponse may have already started
+        # Instead, stream an error payload and terminate the SSE stream cleanly.
         except AuthenticationError as e:
             print(f"Bad API key: {e}")
-            raise HTTPException(status_code=500, detail="LLM authentication failed")
+            yield f"data: {json.dumps({'error': 'LLM authentication failed'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         except RateLimitError as e:
             print(f"Rate limited: {e}")
-            raise HTTPException(status_code=429, detail="LLM rate limit hit")
+            yield f"data: {json.dumps({'error': 'LLM rate limit hit'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
         except APIError as e:
             print(f"API error: {e}")
-            raise HTTPException(status_code=502, detail="LLM upstream error")
+            yield f"data: {json.dumps({'error': 'LLM upstream error'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        except Exception as e:
+            # Fallback to avoid 'response already started' runtime from uncaught exceptions
+            print(f"Unexpected error in streaming: {e}")
+            yield f"data: {json.dumps({'error': 'unexpected streaming error'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return

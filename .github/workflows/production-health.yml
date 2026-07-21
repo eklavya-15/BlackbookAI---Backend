@@ -13,7 +13,6 @@ jobs:
 
     env:
       API_URL: ${{ secrets.API_URL }}
-      CRON_SECRET: ${{ secrets.CRON_SECRET }}
       PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
       PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
 

@@ -20,7 +20,7 @@ jobs:
       - name: Call Production Health Endpoint
         id: healthcheck
         run: |
-          PAYLOAD='{"userId":"c4096a30-1bf7-4929-8018-b413cd1f12b8","sourceIds":[{"sourceId":"a8df84f9-3336-5a12-8e27-a8d58ad55e6c","type":"pdf","title":"make_in_India.pdf","createdAt":"2026-06-04T00:42:35.319Z"},{"sourceId":"b5284fef-239d-5ec6-837a-b8b490cedf2a","type":"pdf","title":"Operation-SIndoor-15-January-2026.pdf","createdAt":"2026-06-04T00:50:36.475Z","status":"processing"},{"sourceId":"a9740dcb-9362-58c5-a8f6-7954cf04530f","type":"text","title":"Untitled Text","createdAt":"2026-06-22T15:37:29.165Z","status":"completed"}],"query":"ping","conversationHistory":[]}'
+          PAYLOAD='{"userId":"c4096a30-1bf7-4929-8018-b413cd1f12b8","sourceIds":["b5284fef-239d-5ec6-837a-b8b490cedf2a","a9740dcb-9362-58c5-a8f6-7954cf04530f"],"query":"what happend on 10th may 2025","conversationHistory":[]}'
 
           HTTP_CODE=$(curl \
             --silent \

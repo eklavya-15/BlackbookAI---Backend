@@ -16,3 +16,4 @@ evaluation
 poll*.py
 .dockerignore
 scripts/*
+fly-deploy.yml

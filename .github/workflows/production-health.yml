@@ -2,8 +2,8 @@ name: NotebookLLM Production Health
 
 on:
   schedule:
-    # 8:00 AM IST every day (02:30 UTC)
-    - cron: "30 2 * * *"
+    # 8:00 AM IST every second day (02:30 UTC)
+    - cron: "30 2 */2 * *"
 
   workflow_dispatch:
 
